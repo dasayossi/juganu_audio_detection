@@ -1,58 +1,79 @@
-import numpy as np
 import os
-import queue
+import numpy as np
 from tensorflow import keras
 from scipy.io import wavfile
 from python_speech_features import mfcc
-
 import speech_recognition as sr
+from time import sleep
+import subprocess
+import wave
 
-# r = sr.Recognizer()
-# with sr.Microphone() as source:                # use the default microphone as the audio source
-#     audio = r.listen(source)
-#     try:
-#         print(f'You said {r.recognize_google(audio)}')
-#     except:
-#         print("error")
-
-PATH = 'C:\\AI\\Juganu\\dataset'
 
 labels = ['juganu', 'not_juganu']
-model = keras.models.load_model('output/juganu_speech_recognition.model')
+PATH = 'C:\\AI\\Juganu\\dataset'
+sounds_folder = 'sounds'
 
 
-def audio_for_test():
-    X = queue.Queue()
-    corrupted_list = []
-    s_b_corrupted_list = []
-    for l in labels:
-        label_path = os.path.join(PATH, l)
-        files = os.listdir(label_path)
-        for index, f in enumerate(files):
-            sample_rate, audio = wavfile.read(os.path.join(label_path, f))
-            if len(audio) > sample_rate * 0.5:
+def empty_sounds_folder():
+    if not os.path.isdir(sounds_folder):
+        os.mkdir(sounds_folder)
+    else:
+        filelist = [f for f in os.listdir(sounds_folder) if f.endswith(".wav")]
+        for f in filelist:
+            os.remove(os.path.join(sounds_folder, f))
 
-                spectrogram = mfcc(audio[0:int(sample_rate * (0.5))], sample_rate)
+def get_center(sound_len, max_index, sample_rate):
+    delta = int(sample_rate * 0.4)
+    if max_index - delta < 0:
+        return delta
+    if max_index + delta > sound_len:
+        return sound_len - delta
+
+    return max_index
+
+
+if __name__ == '__main__':
+
+    model = keras.models.load_model('output/juganu_speech_recognition.model', compile=True)
+
+    r = sr.Recognizer()
+    with sr.Microphone() as source:  # use the default microphone as the audio source
+        counter = 0
+        empty_sounds_folder()
+        while True:
+            print("Please say any word...")
+            audio = r.listen(source)
+            sound_path = os.path.join(sounds_folder, f'sound_{counter}.wav')
+            sound16_path = os.path.join(sounds_folder, f'sound16_{counter}.wav')
+            obj = wave.open(sound_path, 'w')
+            obj.setnchannels(1)  # mono
+            obj.setsampwidth(2)
+            obj.setframerate(audio.sample_rate)
+            obj.writeframesraw(audio.get_wav_data())
+            obj.close()
+            sleep(0.1)  # To ensure the writing
+            subprocess.run(
+                f'"ffmpeg/ffmpeg.exe" -y -i '
+                f'{sound_path} -ar 16000 {sound16_path}',
+                shell=True)
+            sleep(0.1)  # To ensure the conversion
+            sample_rate, sound = wavfile.read(sound16_path)
+            counter += 1
+            sound_len = len(sound)
+            if sound_len > sample_rate*0.5:
+
+                max_index = np.argmax(sound)
+                center = get_center(sound_len, max_index, sample_rate)
+                spectrogram = mfcc(np.array(sound[center - int(sample_rate * 0.25):center + int(sample_rate * 0.25)]), sample_rate)
                 spec = spectrogram.T
-                if spec.shape == (13, 49):
-                    X.put((f, l, spec))
 
-    return X
+                # Get Prediction
+                p = model.predict(np.array([spec, ]))
+                prediction = np.argmax(p)
+                if prediction == 0:
 
-
-if __name__ =='__main__':
-
-    X = audio_for_test()
-    while not X.empty():
-        (f, l, spec) = X.get()
-
-        p = model.predict(np.array( [spec,]))
-        prediction = np.argmax(p)
-        if prediction==0:
-
-            print(f'{f} = {l}, the result is: Juganu')
-        else:
-            print(f'{f} = {l}, the result is: Not Juganu')
-
-    # TODO:
-    #  final test is to use the user micerophon
+                    print('You said Juganu')
+                else:
+                    print("You didn't say Juganu")
+            else:
+                print("Corrupted record")
