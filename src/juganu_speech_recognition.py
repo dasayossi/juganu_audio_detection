@@ -26,7 +26,6 @@ if __name__ == '__main__':
         for index, f in enumerate(files):
             sample_rate, audio = wavfile.read(os.path.join(label_path, f))
             if len(audio) > sample_rate*0.5:
-
                 spectrogram = mfcc(audio[0:int(sample_rate*(0.5))], sample_rate)
                 spec = spectrogram.T
                 if spec.shape == (13, 49):
@@ -56,7 +55,9 @@ if __name__ == '__main__':
         model.add(layers.Dense(32, input_shape=X_train.shape[1:], activation='relu'))
         model.add(layers.Dense(64, activation='relu'))
         model.add(layers.Dense(128, activation='relu'))
+        model.add(layers.Dense(256, activation='relu'))
         model.add(layers.Flatten())
+        model.add(layers.Dense(128, activation='relu'))
         model.add(layers.Dense(64, activation='relu'))
         model.add(layers.Dense(32, activation='relu'))
         model.add(layers.Dense(2, activation='softmax'))
